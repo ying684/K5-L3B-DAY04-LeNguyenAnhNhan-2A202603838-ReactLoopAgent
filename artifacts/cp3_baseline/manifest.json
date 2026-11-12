@@ -1,0 +1,40 @@
+{
+  "config": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-20b",
+    "judge_provider": "groq",
+    "judge_model": "openai/gpt-oss-20b",
+    "max_steps": 8,
+    "dataset": "core",
+    "groq_max_completion_tokens": 8192
+  },
+  "summary": {
+    "total_cases": 22,
+    "scored_cases": 22,
+    "unscored_cases": 0,
+    "score_0_100": 89.68,
+    "partial_mean_0_100": null
+  },
+  "sha256": {
+    "agent.py": "d28a16680fea697edc476efe32c88e93a814d57e6cf77576f9cc7f78574ca45f",
+    "providers.py": "3250d6f5c9975130b53090aa0b47e6dfab4cda19019cf7706407becb61bae3ee",
+    "run.py": "ef05c050c7cf7f23334a1639993a23bb8573db7df4d806563d57aa070d1dcdf5",
+    "evals/run_evals.py": "dc4067975a70ee345701c2d8ed38a807cea887c694eb0fbbcae54083ae4d2eaf",
+    "eval_before.json": "5e0079d9cc3b460247b67a0754d2c914b93fa7b8121bfa1831cf75ce6433ede5",
+    "evals/cases.json": "bca3ea31cb42dae5a952a7522bf87242b25117e565d1a5c3c636c18635abf50b",
+    "evals/scenarios.py": "193c39f8f82cdaa3c4f7b68715ddaf94cdae1f4f760bcc893ccaa42e84436a1f",
+    "evals/grading.py": "e64f759f933830800788f6d315768a1152214faefb947585a1ff9148e7761f25",
+    "RUBRIC.md": "a60607764091f0d6b33fd09a4792941878877bdee1979948c3f78bd876f775a0",
+    "fixtures/cloudflare.json": "04eb4851cae0b59cda64313fb82b94c5de7ab8e3a47016844b97762c18bbd57e",
+    "fixtures/github.json": "ef189b6b8376d42b50b5676e08264f5745a69141b19cd0ed3f86a1b74217f11c"
+  },
+  "metrics": {
+    "agent_model_calls": 67,
+    "tool_calls": 46,
+    "agent_tokens": 84677,
+    "judge_tokens": 48523
+  },
+  "retry_cases": [
+    "E6"
+  ]
+}

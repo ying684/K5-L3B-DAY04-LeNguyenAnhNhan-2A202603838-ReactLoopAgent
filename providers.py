@@ -5,10 +5,13 @@ import urllib.error
 import urllib.request
 import uuid
 
+GROQ_MAX_COMPLETION_TOKENS = 8192
+
 CONFIG = {
     'openai': ('OPENAI_API_KEY', 'https://api.openai.com/v1/chat/completions'),
     'gemini': ('GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'),
     'openrouter': ('OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1/chat/completions'),
+    'groq': ('GROQ_API_KEY', 'https://api.groq.com/openai/v1/chat/completions'),
     'opencode-go': ('OPENCODE_GO_API_KEY', 'https://opencode.ai/inference/go/openai/v1/chat/completions'),
     'anthropic': ('ANTHROPIC_API_KEY', 'https://api.anthropic.com/v1/messages'),
 }
@@ -20,8 +23,24 @@ def post_json(url, headers, payload):
         with urllib.request.urlopen(req, timeout=60) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
-        # Do not print response bodies: they may contain account or request data.
-        raise RuntimeError(f'Provider trả HTTP {exc.code}; kiểm tra model, key và quota.') from exc
+        # Chỉ nhận diện mã lỗi đã biết; không in response body hay API key.
+        hint = 'kiểm tra model, key và quota.'
+        if exc.code == 403:
+            hint = 'request bị từ chối truy cập; kiểm tra quyền model/project và mạng.'
+            body = exc.read(4096).decode('utf-8', errors='replace')
+            try:
+                data = json.loads(body)
+                error = data.get('error') if isinstance(data, dict) else None
+                code = error.get('code') if isinstance(error, dict) else None
+            except ValueError:
+                code = None
+            if code == 'model_permission_blocked_org':
+                hint = 'model bị chặn ở organization; bật quyền trong Groq Settings → Organization → Limits.'
+            elif code == 'model_permission_blocked_project':
+                hint = 'model bị chặn ở project; bật quyền trong Groq Settings → Projects → Limits.'
+            elif body.strip() == 'error code: 1010':
+                hint = 'lớp bảo vệ Cloudflare từ chối chữ ký client (1010).'
+        raise RuntimeError(f'Provider trả HTTP {exc.code}; {hint}') from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f'Không kết nối được provider: {exc.reason}') from exc
 
@@ -52,6 +71,10 @@ class Provider:
         if schemas:
             payload['tools'] = schemas
         headers = {'Authorization': f'Bearer {self.key}'}
+        if self.name == 'groq':
+            headers['User-Agent'] = 'StatusAgentLab/1.0'
+            # GPT-OSS cần đủ budget cho reasoning và câu trả lời cuối.
+            payload['max_completion_tokens'] = GROQ_MAX_COMPLETION_TOKENS
         if self.name == 'opencode-go':
             headers.update({'User-Agent': 'StatusAgentLab/1.0', 'x-opencode-session': self.session_id})
         data = post_json(self.url, headers, payload)

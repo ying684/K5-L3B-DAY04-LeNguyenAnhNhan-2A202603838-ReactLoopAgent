@@ -1,0 +1,23 @@
+{
+  "config": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-20b",
+    "judge_provider": "groq",
+    "judge_model": "openai/gpt-oss-20b",
+    "max_steps": 8,
+    "dataset": "core",
+    "groq_max_completion_tokens": 8192
+  },
+  "agent_sha256": "deca05aee2ec1158c8395772ecab2004a9a28e8852c1f2b07c18d7d01acebc60",
+  "baseline_report_sha256": "5e0079d9cc3b460247b67a0754d2c914b93fa7b8121bfa1831cf75ce6433ede5",
+  "full_eval_output": "eval_after.json",
+  "full_eval_policy": "One full pass; no automatic case retries or selection of higher scores.",
+  "eval_after_sha256": "2bb2c06f3ef299a237e07d9a1c3e4424a4cd271f2684a07fbf9279704355f4e4",
+  "summary": {
+    "total_cases": 22,
+    "scored_cases": 22,
+    "unscored_cases": 0,
+    "score_0_100": 89.86,
+    "partial_mean_0_100": null
+  }
+}

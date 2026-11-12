@@ -1,13 +1,14 @@
 """Chạy và chấm eval. expected chỉ cung cấp cho judge, không gửi cho agent."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import datetime
 import json
 import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent import run_agent
-from providers import Provider
+from providers import CONFIG, GROQ_MAX_COMPLETION_TOKENS, Provider
 from scenarios import ScenarioTools
 from grading import grade_case, summarize, bonus_points
 from bonus.tools import BonusTools
@@ -33,7 +34,7 @@ def run_case(case, args):
 
 def main():
     parser = argparse.ArgumentParser(description='Chạy agent và chấm eval 0–100')
-    choices = ['openai', 'gemini', 'anthropic', 'openrouter', 'opencode-go']
+    choices = list(CONFIG)
     parser.add_argument('--provider', choices=choices, default=os.getenv('PROVIDER', 'openai'))
     parser.add_argument('--model', default=os.getenv('MODEL'))
     parser.add_argument('--judge-provider', choices=choices, default=os.getenv('JUDGE_PROVIDER'))
@@ -43,6 +44,8 @@ def main():
     parser.add_argument('--max-steps', type=int, default=None, help='Giới hạn model calls mỗi case: mặc định 8, bonus 16')
     parser.add_argument('--workers', type=int, default=1, help='Số case chạy đồng thời (mặc định 1)')
     parser.add_argument('--output', default='eval_results.json')
+    parser.add_argument('--retry-unscored', action='store_true',
+                        help='Chỉ chạy lại case chưa chấm trong --output, giữ nguyên mọi case đã có điểm')
     args = parser.parse_args()
     args.judge_provider = args.judge_provider or args.provider
     args.judge_model = args.judge_model or args.model
@@ -53,7 +56,41 @@ def main():
         parser.error('--max-steps phải >= 1 và --workers phải từ 1 đến 8')
     cases_path = (Path(__file__).resolve().parents[1] / 'bonus' / 'cases.json') if args.bonus else (Path(__file__).parent / 'cases.json')
     cases = json.loads(cases_path.read_text(encoding='utf-8'))
-    selected = [c for c in cases if not args.case or c['id'] == args.case.upper()]
+    config = {'provider': args.provider, 'model': args.model,
+              'judge_provider': args.judge_provider, 'judge_model': args.judge_model,
+              'max_steps': args.max_steps, 'dataset': 'bonus' if args.bonus else 'core'}
+    if 'groq' in (args.provider, args.judge_provider):
+        config['groq_max_completion_tokens'] = GROQ_MAX_COMPLETION_TOKENS
+    previous = None
+    if args.retry_unscored:
+        if args.case:
+            parser.error('--retry-unscored không dùng cùng --case; chỉ thử lại các case chưa chấm.')
+        try:
+            previous = json.loads(Path(args.output).read_text(encoding='utf-8'))
+            if previous['config'] != config:
+                parser.error('Cấu hình khác file cũ; không được ghép kết quả khác cấu hình.')
+            old_cases = previous['cases']
+            if [c['id'] for c in old_cases] != [c['id'] for c in cases]:
+                parser.error('File cũ phải chứa đủ bộ case, đúng thứ tự.')
+            for old, case in zip(old_cases, cases):
+                if any(old.get(k) != case[k] for k in ('question', 'expected')):
+                    parser.error('Nội dung dataset khác file cũ; không chạy tiếp.')
+            pending = {c['id'] for c in old_cases if c['grade']['score'] is None}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            parser.error(f'Không đọc được report để chạy tiếp: {type(exc).__name__}')
+        if not pending:
+            print('Không có case unscored; không gọi API và không thay đổi report.')
+            return 0
+        selected = [c for c in cases if c['id'] in pending]
+        print(f'Chỉ chạy lại {len(selected)} case unscored; giữ nguyên {len(cases)-len(selected)} case đã có điểm.')
+        # Sao lưu nguyên report trước khi phát sinh bất kỳ API call nào.
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+        output = Path(args.output)
+        backup = output.with_name(f'{output.stem}.before_retry_{stamp}.json')
+        backup.write_bytes(output.read_bytes())
+        print(f'Bản gốc: {backup}')
+    else:
+        selected = [c for c in cases if not args.case or c['id'] == args.case.upper()]
     if not selected:
         parser.error('Không tìm thấy case')
     def run_and_print(case):
@@ -63,12 +100,18 @@ def main():
         return item
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         results = list(pool.map(run_and_print, selected))
-    report = {'summary': summarize(results), 'config': {'provider': args.provider, 'model': args.model,
-              'judge_provider': args.judge_provider, 'judge_model': args.judge_model, 'max_steps': args.max_steps,
-              'dataset': 'bonus' if args.bonus else 'core'}, 'cases': results}
+    if previous is not None:
+        attempts = {item['id']: item for item in results}
+        results = [attempts.get(item['id'], item) for item in previous['cases']]
+        history = list(previous.get('retry_history', []))
+        history.append({'at_utc': stamp, 'backup': str(backup),
+                        'previous_unscored': [item for item in previous['cases'] if item['id'] in attempts]})
+    report = {'summary': summarize(results), 'config': config, 'cases': results}
+    if previous is not None:
+        report['retry_history'] = history
     summary = report['summary']
     if args.bonus:
-        full_run = not args.case and len(selected) == len(cases)
+        full_run = not args.case and len(results) == len(cases)
         report['summary']['bonus_points_0_15'] = bonus_points(summary['score_0_100'], full_run)
         print(f"Điểm bonus tham khảo: {summary['bonus_points_0_15']}/15 (chỉ tính khi chấm đủ toàn bộ case).")
     Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
